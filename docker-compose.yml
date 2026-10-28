@@ -1,0 +1,27 @@
+services:
+  db:
+    build: ./db
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: orders
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d orders"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://app:app@db:5432/orders
+      API_KEY: dev-key
+      WEBHOOK_SECRET: dev-secret
+    ports:
+      - "3000:3000"
+volumes:
+  pgdata: {}

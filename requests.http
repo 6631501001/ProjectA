@@ -1,0 +1,89 @@
+# VS Code: install the "REST Client" extension, then click "Send Request" above each block.
+@base = http://localhost:3000
+@key = dev-key
+# After creating an order, replace this with the orderNo from the response
+@orderNo = ORD-0000000000000-000
+
+### 1) Create an order (Idempotency-Key prevents duplicates; send it twice to see the replay)
+POST {{base}}/orders
+Content-Type: application/json
+Idempotency-Key: demo-key-001
+
+{ "gameUid": "412000126173", "productCode": "DIAMOND_300", "amount": 138 }
+
+### 2) Same key, different body -> 422 IDEMPOTENCY_KEY_REUSED
+POST {{base}}/orders
+Content-Type: application/json
+Idempotency-Key: demo-key-001
+
+{ "gameUid": "412000126173", "productCode": "DIAMOND_300", "amount": 999 }
+
+### 3) Look up one order
+GET {{base}}/orders/{{orderNo}}
+
+### 4) Bad format -> 400 INVALID_ORDER_NO
+GET {{base}}/orders/ABC-123
+
+### 5) Unknown order -> 404 ORDER_NOT_FOUND
+GET {{base}}/orders/ORD-1111111111111-111
+
+### 6) List: current / history, newest first, paginated
+GET {{base}}/orders?tab=current&page=1&pageSize=10
+
+###
+GET {{base}}/orders?tab=history&page=1
+
+### 7) Timeline
+GET {{base}}/orders/{{orderNo}}/timeline
+
+### 8) Customer reports a problem
+POST {{base}}/orders/{{orderNo}}/report-issue
+Content-Type: application/json
+
+{ "reason": "ITEM_NOT_RECEIVED", "detail": "paid 10 minutes ago" }
+
+### 9) Bank webhook: needs an HMAC signature, so run this in a terminal instead:
+#    npm run pay -- ORD-xxxxxxxxxxxxx-xxx            (add a 2nd arg to reuse an event id)
+
+### 10) Bot claims the next paid order (204 when the queue is empty)
+POST {{base}}/bot/claim
+Content-Type: application/json
+X-Api-Key: {{key}}
+
+{ "botId": "bot-1" }
+
+### 11) Bot heartbeat (extends the lease)
+POST {{base}}/bot/orders/{{orderNo}}/heartbeat
+Content-Type: application/json
+X-Api-Key: {{key}}
+
+{ "botId": "bot-1" }
+
+### 12a) Bot completes the top-up
+POST {{base}}/bot/orders/{{orderNo}}/complete
+Content-Type: application/json
+X-Api-Key: {{key}}
+
+{ "botId": "bot-1", "providerRef": "TX-123" }
+
+### 12b) ...or reports failure. retryable=false (wrong UID) -> FAILED, true -> backoff retry
+POST {{base}}/bot/orders/{{orderNo}}/fail
+Content-Type: application/json
+X-Api-Key: {{key}}
+
+{ "botId": "bot-1", "reason": "UID not found", "retryable": false }
+
+### 13) Support fixes the UID and re-queues
+POST {{base}}/admin/orders/{{orderNo}}/fix-uid
+Content-Type: application/json
+X-Api-Key: {{key}}
+
+{ "gameUid": "412000126174" }
+
+### 14) Support refunds a FAILED / DELAYED order
+POST {{base}}/admin/orders/{{orderNo}}/refund
+X-Api-Key: {{key}}
+
+### 15) Run the scheduler once by hand (it also runs every 30s)
+POST {{base}}/admin/sweep
+X-Api-Key: {{key}}
